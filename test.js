@@ -3,12 +3,14 @@ var artsyXapp = require('./'),
 
 var app = express();
 var requested = 0;
+var lastReq;
 app.get('/api/v1/xapp_token', function(req, res, next) {
   requested++
   res.send({
     "xapp_token": "foo-token" + requested,
-    "expires_in": new Date(Date.now() + 2000).toISOString()
+    "expires_in": new Date(Date.now() + 2000).toISOString(),
   });
+  lastReq = req;
 });
 
 
@@ -43,6 +45,20 @@ describe('artsyXapp', function() {
         artsyXapp.token.should.containEql('foo-token');
         done();
       }, 1000);
+    });
+  });
+
+
+  it('sends client id and secret', function(done) {
+    artsyXapp.init({
+      url: 'http://localhost:7000',
+      id: 'foo',
+      secret: 'bar'
+    }, function() {
+      console.log(lastReq.query);
+      lastReq.query.client_id.should.equal('foo');
+      lastReq.query.client_secret.should.equal('bar');
+      done();
     });
   });
 

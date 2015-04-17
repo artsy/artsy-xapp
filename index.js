@@ -22,18 +22,21 @@ var fetchAndCacheToken = function (options){
   return function(callback) {
 
     // Get the token
-    request.get(options.url + '/api/v1/xapp_token').end(function(err, res) {
-      if (err) {
-        module.exports.emit('error', err);
-        if (callback) callback(err);
-        return
-      }
-      module.exports.token = res.body.xapp_token;
-      if (callback) callback(null, module.exports.token);
+    request
+      .get(options.url + '/api/v1/xapp_token')
+      .query({ client_id: options.id, client_secret: options.secret })
+      .end(function(err, res) {
+        if (err) {
+          module.exports.emit('error', err);
+          if (callback) callback(err);
+          return
+        }
+        module.exports.token = res.body.xapp_token;
+        if (callback) callback(null, module.exports.token);
 
-      // Recurse this function to refresh the token it before it expires
-      var expiresAt = new Date(res.body.expires_in).getTime();
-      setTimeout(fetchAndCacheToken(options), (expiresAt - 1000) - Date.now());
-    });
-  }
+        // Recurse this function to refresh the token it before it expires
+        var expiresAt = new Date(res.body.expires_in).getTime();
+        setTimeout(fetchAndCacheToken(options), (expiresAt - 1000) - Date.now());
+      });
+    }
 }
