@@ -5,6 +5,9 @@ module.exports = new Emitter();
 
 module.exports.init = function (options, callback) {
 
+  // Do a solid and just callback for test env
+  if (process.env.NODE_ENV) return callback();
+
   // Setup defaults
   if(typeof options == 'function') {
     callback = options;
