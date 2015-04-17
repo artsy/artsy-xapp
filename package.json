@@ -1,0 +1,31 @@
+{
+  "name": "artsy-xapp",
+  "version": "1.0.0",
+  "description": "Tiny lib to fetch and refresh an xapp token from Artsy's API.",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha -r should"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/artsy/artsy-xapp.git"
+  },
+  "keywords": [
+    "artsy",
+    "xapp"
+  ],
+  "author": "Craig Spaeth",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/artsy/artsy-xapp/issues"
+  },
+  "homepage": "https://github.com/artsy/artsy-xapp",
+  "dependencies": {
+    "superagent": "^1.2.0"
+  },
+  "devDependencies": {
+    "express": "^4.12.3",
+    "mocha": "^2.2.4",
+    "should": "^6.0.1"
+  }
+}
