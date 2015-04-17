@@ -1,10 +1,10 @@
 {
   "name": "artsy-xapp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Tiny lib to fetch and refresh an xapp token from Artsy's API.",
   "main": "index.js",
   "scripts": {
-    "test": "mocha -r should"
+    "test": "NODE_ENV=staging mocha -r should"
   },
   "repository": {
     "type": "git",

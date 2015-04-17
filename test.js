@@ -55,7 +55,6 @@ describe('artsyXapp', function() {
       id: 'foo',
       secret: 'bar'
     }, function() {
-      console.log(lastReq.query);
       lastReq.query.client_id.should.equal('foo');
       lastReq.query.client_secret.should.equal('bar');
       done();
