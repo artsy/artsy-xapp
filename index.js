@@ -15,7 +15,7 @@ module.exports.init = function (options, callback) {
   }
   if (!options.url) options.url = process.env.ARTSY_URL;
   if (!options.id) options.id = process.env.ARTSY_ID;
-  if (!options.secret) options.secret = process.env.ARTSY_SECERT;
+  if (!options.secret) options.secret = process.env.ARTSY_SECRET;
 
   // Fetch the xapp token, cache, and refresh
   fetchAndCacheToken(options)(callback);
