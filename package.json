@@ -1,6 +1,6 @@
 {
   "name": "artsy-xapp",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Tiny lib to fetch and refresh an xapp token from Artsy's API.",
   "main": "index.js",
   "scripts": {
