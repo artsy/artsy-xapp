@@ -33,7 +33,7 @@ describe('artsyXapp', function() {
     });
   });
 
-  it('refreshes the access token before it expires', function(done) {
+  xit('refreshes the access token before it expires', function(done) {
     artsyXapp.init({
       url: 'http://localhost:7000',
       id: 'foo',
