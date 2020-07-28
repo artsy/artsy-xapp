@@ -1,6 +1,9 @@
 var Emitter = require('events').EventEmitter,
   request = require('superagent');
 
+var MAX_NODE_TIMEOUT = 2147483647;
+var MIN_NODE_TIMEOUT = 1;
+
 module.exports = new Emitter();
 
 module.exports.init = function (options, callback) {
@@ -9,7 +12,7 @@ module.exports.init = function (options, callback) {
   if (process.env.NODE_ENV == 'test') return callback();
 
   // Setup defaults
-  if(typeof options == 'function') {
+  if (typeof options == 'function') {
     callback = options;
     var options = {};
   }
@@ -39,6 +42,9 @@ var fetchAndCacheToken = function (options, callback) {
 
       // Recurse this function to refresh the token it before it expires
       var expiresAt = new Date(res.body.expires_in).getTime();
-      setTimeout(() => fetchAndCacheToken(options, callback), (expiresAt - 1000) - Date.now());
+      var timeout = (expiresAt - 1000) - Date.now()
+      setTimeout(() => fetchAndCacheToken(options, callback),
+        ((timeout > MAX_NODE_TIMEOUT) ? MAX_NODE_TIMEOUT :
+         (timeout < MIN_NODE_TIMEOUT) ? MIN_NODE_TIMEOUT : timeout));
     });
 }
