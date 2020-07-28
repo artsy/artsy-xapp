@@ -4,11 +4,12 @@ var artsyXapp = require('./'),
 var app = express();
 var requested = 0;
 var lastReq;
+var timeOffset = 0;
 app.get('/api/v1/xapp_token', function(req, res, next) {
   requested++
   res.send({
     "xapp_token": "foo-token" + requested,
-    "expires_in": new Date(Date.now() + 2000).toISOString(),
+    "expires_in": new Date(Date.now() + timeOffset).toISOString(),
   });
   lastReq = req;
 });
@@ -22,6 +23,11 @@ describe('artsyXapp', function() {
     server = app.listen(7000, done);
   });
 
+  beforeEach(function () {
+    requested = 0;
+    timeOffset = 2000;
+  })
+
   it('gets an access token on init', function(done) {
     artsyXapp.init({
       url: 'http://localhost:7000',
@@ -33,21 +39,22 @@ describe('artsyXapp', function() {
     });
   });
 
-  xit('refreshes the access token before it expires', function(done) {
+  it('refreshes the access token before it expires', function(done) {
+    timeOffset = 1250
+    var refreshes = 1;
     artsyXapp.init({
       url: 'http://localhost:7000',
       id: 'foo',
       secret: 'bar'
     }, function() {
-      artsyXapp.token.should.equal('foo-token2');
+      artsyXapp.token.should.equal('foo-token' + refreshes++);
       setTimeout(function() {
-        artsyXapp.token.should.not.equal('foo-token2');
-        artsyXapp.token.should.containEql('foo-token');
+        artsyXapp.token.should.not.equal('foo-token1');
+        artsyXapp.token.should.containEql('foo-token2');
         done();
-      }, 1000);
+      }, 275);
     });
   });
-
 
   it('sends client id and secret', function(done) {
     artsyXapp.init({
