@@ -3,6 +3,7 @@ var Emitter = require('events').EventEmitter,
 
 var MAX_NODE_TIMEOUT = 2147483647;
 var MIN_NODE_TIMEOUT = 1;
+var timeoutHandles = []
 
 module.exports = new Emitter();
 
@@ -10,6 +11,9 @@ module.exports.init = function (options, callback) {
 
   // Do a solid and just callback for test env
   if (process.env.NODE_ENV == 'test') return callback();
+
+  // Make sure there aren't any lingering timeouts.
+  clearTimeouts();
 
   // Setup defaults
   if (typeof options == 'function') {
@@ -22,6 +26,13 @@ module.exports.init = function (options, callback) {
 
   // Fetch the xapp token, cache, and refresh
   fetchAndCacheToken(options, callback);
+}
+
+function clearTimeouts() {
+  for (var timeoutHandle of timeoutHandles) {
+    clearTimeout(timeoutHandle);
+  }
+  timeoutHandles = [];
 }
 
 var fetchAndCacheToken = function (options, callback) {
@@ -43,8 +54,14 @@ var fetchAndCacheToken = function (options, callback) {
       // Recurse this function to refresh the token it before it expires
       var expiresAt = new Date(res.body.expires_in).getTime();
       var timeout = (expiresAt - 1000) - Date.now()
-      setTimeout(() => fetchAndCacheToken(options, callback),
+      var timeoutHandle = setTimeout(function () {
+        var index = timeoutHandles.indexOf(timeoutHandle);
+        timeoutHandles.splice(index, 1);
+        fetchAndCacheToken(options, callback);
+      },
         ((timeout > MAX_NODE_TIMEOUT) ? MAX_NODE_TIMEOUT :
-         (timeout < MIN_NODE_TIMEOUT) ? MIN_NODE_TIMEOUT : timeout));
+         (timeout < MIN_NODE_TIMEOUT) ? MIN_NODE_TIMEOUT : timeout)
+      )
+      timeoutHandles.push(timeoutHandle);
     });
 }
