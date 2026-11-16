@@ -2,13 +2,24 @@ var artsyXapp = require('./'),
     express = require('express');
 
 var app = express();
+// Reused keep-alive sockets can delay fetch() requests by hundreds of ms on
+// some Node versions, which makes refresh timing unpredictable. Use a fresh
+// connection per request.
+app.use(function(req, res, next) {
+  res.set('Connection', 'close');
+  next();
+});
 var requested = 0;
 var lastReq;
 var timeOffset = 0;
 var responseStatus = 200;
 var responseBody = null;
+var offsetsById = null; // optional expiry offsets keyed by client_id
+var requestsById = {};
 app.get('/api/v1/xapp_token', function(req, res, next) {
   requested++
+  var id = req.query.client_id;
+  requestsById[id] = (requestsById[id] || 0) + 1;
   lastReq = req;
   if (responseStatus !== 200) {
     return res.status(responseStatus).send({ error: 'Unauthorized' });
@@ -16,7 +27,9 @@ app.get('/api/v1/xapp_token', function(req, res, next) {
   if (responseBody) return res.send(responseBody);
   res.send({
     "xapp_token": "foo-token" + requested,
-    "expires_in": new Date(Date.now() + timeOffset).toISOString(),
+    "expires_in": new Date(
+      Date.now() + ((offsetsById && offsetsById[id]) || timeOffset)
+    ).toISOString(),
   });
   lastReq = req;
 });
@@ -35,6 +48,8 @@ describe('artsyXapp', function() {
     timeOffset = 2000;
     responseStatus = 200;
     responseBody = null;
+    offsetsById = null;
+    requestsById = {};
     artsyXapp.removeAllListeners('error');
   })
 
@@ -65,6 +80,32 @@ describe('artsyXapp', function() {
       } else if (calls === 2) {
         token.should.equal('foo-token2');
         artsyXapp.token.should.equal('foo-token2');
+        done();
+      }
+    });
+  });
+
+  it('drops an in-flight request from a previous init', function(done) {
+    // The stale init's token expires soon, so if its response were honoured
+    // it would start its own refresh loop ~100ms in. The live init refreshes
+    // ~500ms in. Requests are counted per client_id so traffic from other
+    // tests can't affect the counts.
+    offsetsById = { stale: 1100, live: 1500 };
+    var url = 'http://localhost:7000';
+    var staleCalls = 0;
+    var liveCalls = 0;
+
+    artsyXapp.init({ url: url, id: 'stale', secret: 'bar' }, function() {
+      staleCalls++;
+    });
+    artsyXapp.init({ url: url, id: 'live', secret: 'bar' }, function(err, token) {
+      liveCalls++;
+      if (liveCalls === 2) {
+        // By now the stale loop would have refreshed several times.
+        requestsById.stale.should.equal(1);
+        requestsById.live.should.equal(2);
+        staleCalls.should.equal(0);
+        artsyXapp.token.should.equal(token);
         done();
       }
     });
