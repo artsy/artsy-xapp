@@ -38,14 +38,32 @@ var fetchAndCacheToken = function (options, callback) {
     options.url +
       `/api/v1/xapp_token?client_id=${options.id}&client_secret=${options.secret}`
   )
-    .then((data) => data.json())
+    .then((data) => {
+      // fetch() resolves on HTTP errors (e.g. 401 for bad/rotated
+      // credentials), so treat non-2xx responses as failures explicitly.
+      if (!data.ok) {
+        var err = new Error(
+          "Failed to fetch xapp token: " + data.status + " " + data.statusText
+        );
+        err.status = data.status;
+        throw err;
+      }
+      return data.json();
+    })
     .then((res) => {
+      // Validate the payload before scheduling a refresh. A missing or
+      // unparseable expires_in yields a NaN timeout, which setTimeout treats
+      // as ~1ms and would hammer the API in a tight loop.
+      var expiresAt = new Date(res && res.expires_in).getTime();
+      if (!res || !res.xapp_token || !Number.isFinite(expiresAt)) {
+        throw new Error("Invalid xapp token response from " + options.url);
+      }
+
       // Set and callback w/ token (useful for client middleware).
       module.exports.token = res.xapp_token;
       if (callback) callback(null, module.exports.token);
 
       // Recurse this function to refresh the token it before it expires
-      var expiresAt = new Date(res.expires_in).getTime();
       var timeout = expiresAt - 1000 - Date.now();
       var timeoutHandle = setTimeout(
         function () {
