@@ -3,16 +3,34 @@ version: 2.1
 orbs:
   auto: artsy/auto@3.0.0
 
+jobs:
+  test:
+    docker:
+      - image: cimg/node:22.14
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: yarn install --frozen-lockfile
+      - run:
+          name: Run tests
+          command: yarn test
+
 workflows:
   build_and_verify:
     jobs:
+      - test
       - auto/publish-canary:
           context: npm-deploy
           filters:
             branches:
               ignore: master
+          requires:
+            - test
       - auto/publish:
           context: npm-deploy
           filters:
             branches:
               only: master
+          requires:
+            - test
