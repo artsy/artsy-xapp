@@ -4,7 +4,8 @@
   "description": "Tiny lib to fetch and refresh an xapp token from Artsy's API.",
   "main": "index.js",
   "scripts": {
-    "test": "NODE_ENV=staging mocha -r should"
+    "test": "NODE_ENV=staging mocha -r should",
+    "release": "auto shipit"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -24,8 +25,14 @@
   },
   "homepage": "https://github.com/artsy/artsy-xapp",
   "devDependencies": {
+    "@artsy/auto-config": "^1.2.0",
+    "auto": "^10.37.6",
     "express": "^4.12.3",
     "mocha": "^2.2.4",
     "should": "^6.0.1"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   }
 }
