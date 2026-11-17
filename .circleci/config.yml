@@ -1,0 +1,18 @@
+version: 2.1
+
+orbs:
+  auto: artsy/auto@3.0.0
+
+workflows:
+  build_and_verify:
+    jobs:
+      - auto/publish-canary:
+          context: npm-deploy
+          filters:
+            branches:
+              ignore: master
+      - auto/publish:
+          context: npm-deploy
+          filters:
+            branches:
+              only: master
