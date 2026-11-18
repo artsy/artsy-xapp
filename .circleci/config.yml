@@ -1,18 +1,24 @@
 version: 2.1
 
 orbs:
+  yarn: artsy/yarn@6.5.0
   auto: artsy/auto@3.0.0
 
 workflows:
   build_and_verify:
     jobs:
+      - yarn/test
       - auto/publish-canary:
           context: npm-deploy
           filters:
             branches:
               ignore: master
+          requires:
+            - yarn/test
       - auto/publish:
           context: npm-deploy
           filters:
             branches:
               only: master
+          requires:
+            - yarn/test
