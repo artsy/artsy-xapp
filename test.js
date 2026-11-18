@@ -129,43 +129,90 @@ describe('artsyXapp', function() {
     });
   });
 
-  it('emits an error and backs off instead of retrying immediately on a 401', function(done) {
-    responseStatus = 401;
-    var errors = 0;
-    artsyXapp.on('error', function(err) {
-      errors++;
-      err.status.should.equal(401);
-    });
+  // Init once, wait 200ms, then assert on everything that happened. Counting
+  // and asserting after the timer (rather than inside the callback) means a
+  // thrown assertion can't be caught by the library and turned into the
+  // expected error, which would let the test pass by accident.
+  function expectOneFailure(id, done, check) {
+    var results = [];
+    var errors = [];
+    artsyXapp.on('error', function(err) { errors.push(err); });
     artsyXapp.init({
       url: 'http://localhost:7000',
-      id: 'bad',
-      secret: 'creds'
-    }, function(err) {
-      err.should.be.an.instanceOf(Error);
-      setTimeout(function() {
+      id: id,
+      secret: 'bar'
+    }, function(err, token) {
+      results.push({ err: err, token: token });
+    });
+    setTimeout(function() {
+      try {
         requested.should.equal(1);
-        errors.should.equal(1);
-        done();
-      }, 200);
+        results.length.should.equal(1);
+        results[0].err.should.be.an.instanceOf(Error);
+        errors.length.should.equal(1);
+        errors[0].should.equal(results[0].err);
+        if (check) check(results[0].err);
+      } catch (e) {
+        return done(e);
+      }
+      done();
+    }, 200);
+  }
+
+  it('emits an error and backs off instead of retrying immediately on a 401', function(done) {
+    responseStatus = 401;
+    expectOneFailure('bad', done, function(err) {
+      err.status.should.equal(401);
     });
   });
 
   it('emits an error and backs off instead of retrying immediately on an invalid payload', function(done) {
     responseBody = { xapp_token: 'foo-token', expires_in: 'not-a-date' };
-    var errors = 0;
-    artsyXapp.on('error', function() { errors++; });
+    expectOneFailure('foo', done);
+  });
+
+  [
+    ['0', 0],
+    ['null', null],
+    ['a number of seconds', 3600],
+    ['an old ISO date', '2000-01-01T00:00:00.000Z'],
+    ['less than the 1s refresh buffer away', 'SOON'],
+  ].forEach(function(c) {
+    it('backs off instead of hot-looping when expires_in is ' + c[0], function(done) {
+      var expiresIn = c[1] === 'SOON'
+        ? new Date(Date.now() + 500).toISOString()
+        : c[1];
+      responseBody = { xapp_token: 'foo-token', expires_in: expiresIn };
+      expectOneFailure('foo', done);
+    });
+  });
+
+  it('still calls back with the error when there is no error listener', function(done) {
+    responseStatus = 401;
+    // With no listener, emit('error') throws inside the promise chain; catch
+    // the resulting unhandled rejection so it doesn't kill the test run.
+    var rejections = [];
+    var onRejection = function(reason) { rejections.push(reason); };
+    process.on('unhandledRejection', onRejection);
+    var results = [];
     artsyXapp.init({
       url: 'http://localhost:7000',
-      id: 'foo',
-      secret: 'bar'
+      id: 'bad',
+      secret: 'creds'
     }, function(err) {
-      err.should.be.an.instanceOf(Error);
-      setTimeout(function() {
-        requested.should.equal(1);
-        errors.should.equal(1);
-        done();
-      }, 200);
+      results.push(err);
     });
+    setTimeout(function() {
+      process.removeListener('unhandledRejection', onRejection);
+      try {
+        results.length.should.equal(1);
+        results[0].status.should.equal(401);
+        rejections.length.should.equal(1);
+      } catch (e) {
+        return done(e);
+      }
+      done();
+    }, 200);
   });
 
   it('retries after a transient 5xx and recovers', function(done) {

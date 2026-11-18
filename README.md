@@ -21,7 +21,9 @@ artsyXapp.on('error', process.exit);
 
 ArtsyXapp will fetch an xapp token on `init`, store the token in `artsyXapp.token` and refresh the token in the background shortly before it expires.
 
-If a fetch fails (an HTTP error such as a 401 or 5xx, a network error, or an invalid response), it emits an `error` event, calls the `init` callback with the error, and retries with exponential backoff: 30 seconds, doubling up to a 10-minute cap. The backoff resets after the next successful fetch. `artsyXapp.token` keeps its last value until a fetch succeeds, so it may be expired while retries are failing. If your app depends deeply on Artsy's API, you may want to crash the server on `error` instead.
+If a fetch fails (an HTTP error such as a 401 or 5xx, a network error, or an invalid response, including an `expires_in` that has already passed), it calls the `init` callback with the error, emits an `error` event, and retries with exponential backoff: 30 seconds, doubling up to a 10-minute cap. The backoff resets after the next successful fetch. `artsyXapp.token` keeps its last value until a fetch succeeds, so it may be expired while retries are failing. If your app depends deeply on Artsy's API, you may want to crash the server on `error` instead.
+
+As with any Node `EventEmitter`, emitting `error` with no listener attached throws. Here that surfaces as an unhandled promise rejection, which crashes the process by default on Node 15+. Attach an `error` listener unless crashing is what you want.
 
 Note that the `init` callback runs again after every refresh and every failed fetch, not just once.
 

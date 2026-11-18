@@ -95,10 +95,16 @@ var fetchAndCacheToken = function (options, callback, gen, failures) {
     .then((res) => {
       if (isStale()) return;
       // Validate the payload before scheduling a refresh. A missing or
-      // unparseable expires_in yields a NaN timeout, which setTimeout treats
-      // as ~1ms and would hammer the API in a tight loop.
+      // unparseable expires_in yields a NaN timeout, and one already in the
+      // past (0, null, a number of seconds, an old date) yields a negative
+      // timeout clamped to 1ms. Either would hammer the API in a tight loop.
       var expiresAt = new Date(res && res.expires_in).getTime();
-      if (!res || !res.xapp_token || !Number.isFinite(expiresAt)) {
+      if (
+        !res ||
+        !res.xapp_token ||
+        !Number.isFinite(expiresAt) ||
+        expiresAt - 1000 <= Date.now()
+      ) {
         throw new Error("Invalid xapp token response from " + options.url);
       }
 
@@ -115,15 +121,20 @@ var fetchAndCacheToken = function (options, callback, gen, failures) {
       // Retry with capped exponential backoff so a transient failure (5xx,
       // network error) doesn't leave the app with an expired token until
       // restart, while bad credentials can't turn into a request storm.
-      // Scheduled before emitting, since emitting "error" with no listener
-      // throws.
+      // Scheduled before notifying, so a throwing callback or an "error"
+      // emit with no listener can't prevent the retry.
       var delay = Math.min(
         options.retryDelay * Math.pow(2, failures),
         options.maxRetryDelay
       );
       scheduleFetch(delay, options, callback, gen, failures + 1);
 
-      module.exports.emit("error", err);
-      if (callback) callback(err);
+      // Call back before emitting: emitting "error" with no listener throws,
+      // and the callback should still receive the error in that case.
+      try {
+        if (callback) callback(err);
+      } finally {
+        module.exports.emit("error", err);
+      }
     });
 };
