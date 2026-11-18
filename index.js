@@ -1,6 +1,9 @@
 var Emitter = require("events").EventEmitter;
 var MAX_NODE_TIMEOUT = 2147483647;
 var MIN_NODE_TIMEOUT = 1;
+// Backoff for retrying after a failed fetch: 30s, doubling up to 10 minutes.
+var DEFAULT_RETRY_DELAY = 30 * 1000;
+var DEFAULT_MAX_RETRY_DELAY = 10 * 60 * 1000;
 var timeoutHandles = [];
 
 // Incremented on every init() so responses to requests started by an
@@ -27,9 +30,11 @@ module.exports.init = function (options, callback) {
   if (!options.url) options.url = process.env.ARTSY_URL;
   if (!options.id) options.id = process.env.ARTSY_ID;
   if (!options.secret) options.secret = process.env.ARTSY_SECRET;
+  if (!options.retryDelay) options.retryDelay = DEFAULT_RETRY_DELAY;
+  if (!options.maxRetryDelay) options.maxRetryDelay = DEFAULT_MAX_RETRY_DELAY;
 
   // Fetch the xapp token, cache, and refresh
-  fetchAndCacheToken(options, callback, generationCount);
+  fetchAndCacheToken(options, callback, generationCount, 0);
 };
 
 function clearTimeouts() {
@@ -39,7 +44,27 @@ function clearTimeouts() {
   timeoutHandles = [];
 }
 
-var fetchAndCacheToken = function (options, callback, gen) {
+// Schedule the next fetch for this generation. Delays are clamped to what
+// setTimeout supports.
+function scheduleFetch(delay, options, callback, gen, failures) {
+  var timeoutHandle = setTimeout(
+    function () {
+      var index = timeoutHandles.indexOf(timeoutHandle);
+      if (index !== -1) timeoutHandles.splice(index, 1);
+      fetchAndCacheToken(options, callback, gen, failures);
+    },
+    delay > MAX_NODE_TIMEOUT
+      ? MAX_NODE_TIMEOUT
+      : delay < MIN_NODE_TIMEOUT
+      ? MIN_NODE_TIMEOUT
+      : delay
+  );
+  timeoutHandles.push(timeoutHandle);
+}
+
+// `failures` is the number of consecutive failed fetches so far; it drives the
+// retry backoff and resets to 0 after a successful fetch.
+var fetchAndCacheToken = function (options, callback, gen, failures) {
   var isStale = function () {
     return gen !== generationCount;
   };
@@ -81,24 +106,23 @@ var fetchAndCacheToken = function (options, callback, gen) {
       module.exports.token = res.xapp_token;
       if (callback) callback(null, module.exports.token);
 
-      // Recurse this function to refresh the token it before it expires
-      var timeout = expiresAt - 1000 - Date.now();
-      var timeoutHandle = setTimeout(
-        function () {
-          var index = timeoutHandles.indexOf(timeoutHandle);
-          timeoutHandles.splice(index, 1);
-          fetchAndCacheToken(options, callback, gen);
-        },
-        timeout > MAX_NODE_TIMEOUT
-          ? MAX_NODE_TIMEOUT
-          : timeout < MIN_NODE_TIMEOUT
-          ? MIN_NODE_TIMEOUT
-          : timeout
-      );
-      timeoutHandles.push(timeoutHandle);
+      // Refresh the token shortly before it expires.
+      scheduleFetch(expiresAt - 1000 - Date.now(), options, callback, gen, 0);
     })
     .catch((err) => {
       if (isStale()) return;
+
+      // Retry with capped exponential backoff so a transient failure (5xx,
+      // network error) doesn't leave the app with an expired token until
+      // restart, while bad credentials can't turn into a request storm.
+      // Scheduled before emitting, since emitting "error" with no listener
+      // throws.
+      var delay = Math.min(
+        options.retryDelay * Math.pow(2, failures),
+        options.maxRetryDelay
+      );
+      scheduleFetch(delay, options, callback, gen, failures + 1);
+
       module.exports.emit("error", err);
       if (callback) callback(err);
     });

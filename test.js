@@ -16,13 +16,17 @@ var responseStatus = 200;
 var responseBody = null;
 var offsetsById = null; // optional expiry offsets keyed by client_id
 var requestsById = {};
+var statusSequence = null; // optional status per request number, then responseStatus
+var requestTimes = [];
 app.get('/api/v1/xapp_token', function(req, res, next) {
   requested++
+  requestTimes.push(Date.now());
   var id = req.query.client_id;
   requestsById[id] = (requestsById[id] || 0) + 1;
   lastReq = req;
-  if (responseStatus !== 200) {
-    return res.status(responseStatus).send({ error: 'Unauthorized' });
+  var status = (statusSequence && statusSequence[requested - 1]) || responseStatus;
+  if (status !== 200) {
+    return res.status(status).send({ error: 'Error ' + status });
   }
   if (responseBody) return res.send(responseBody);
   res.send({
@@ -50,6 +54,8 @@ describe('artsyXapp', function() {
     responseBody = null;
     offsetsById = null;
     requestsById = {};
+    statusSequence = null;
+    requestTimes = [];
     artsyXapp.removeAllListeners('error');
   })
 
@@ -123,7 +129,7 @@ describe('artsyXapp', function() {
     });
   });
 
-  it('emits an error and does not retry in a loop on a 401', function(done) {
+  it('emits an error and backs off instead of retrying immediately on a 401', function(done) {
     responseStatus = 401;
     var errors = 0;
     artsyXapp.on('error', function(err) {
@@ -144,7 +150,7 @@ describe('artsyXapp', function() {
     });
   });
 
-  it('emits an error and does not retry in a loop on an invalid payload', function(done) {
+  it('emits an error and backs off instead of retrying immediately on an invalid payload', function(done) {
     responseBody = { xapp_token: 'foo-token', expires_in: 'not-a-date' };
     var errors = 0;
     artsyXapp.on('error', function() { errors++; });
@@ -159,6 +165,95 @@ describe('artsyXapp', function() {
         errors.should.equal(1);
         done();
       }, 200);
+    });
+  });
+
+  it('retries after a transient 5xx and recovers', function(done) {
+    statusSequence = [503, 200];
+    var errors = 0;
+    artsyXapp.on('error', function(err) {
+      errors++;
+      err.status.should.equal(503);
+    });
+    var calls = 0;
+    artsyXapp.init({
+      url: 'http://localhost:7000',
+      id: 'foo',
+      secret: 'bar',
+      retryDelay: 50
+    }, function(err, token) {
+      calls++;
+      if (calls === 1) {
+        err.should.be.an.instanceOf(Error);
+      } else {
+        (err === null).should.be.true;
+        token.should.equal('foo-token2');
+        artsyXapp.token.should.equal('foo-token2');
+        errors.should.equal(1);
+        requested.should.equal(2);
+        done();
+      }
+    });
+  });
+
+  it('retries after a network error', function(done) {
+    var errors = 0;
+    artsyXapp.on('error', function() {
+      errors++;
+      if (errors === 2) done();
+    });
+    artsyXapp.init({
+      url: 'http://127.0.0.1:1', // nothing listens here
+      id: 'foo',
+      secret: 'bar',
+      retryDelay: 20
+    });
+  });
+
+  it('doubles the retry delay up to the cap', function(done) {
+    this.timeout(5000);
+    responseStatus = 503;
+    artsyXapp.on('error', function() {
+      if (requestTimes.length < 6) return;
+      var gaps = [];
+      for (var i = 1; i < requestTimes.length; i++) {
+        gaps.push(requestTimes[i] - requestTimes[i - 1]);
+      }
+      // Expected: 40, 80, 160, 200 (capped), 200 (capped).
+      [40, 80, 160, 200, 200].forEach(function(expected, i) {
+        gaps[i].should.be.within(expected - 5, expected + 60);
+      });
+      done();
+    });
+    artsyXapp.init({
+      url: 'http://localhost:7000',
+      id: 'foo',
+      secret: 'bar',
+      retryDelay: 40,
+      maxRetryDelay: 200
+    });
+  });
+
+  it('resets the backoff after a successful fetch', function(done) {
+    // fail -> retry (100ms) -> success (refresh ~100ms later) -> fail ->
+    // retry should wait 100ms again, not 200ms.
+    statusSequence = [503, 200, 503, 200];
+    timeOffset = 1100;
+    var calls = 0;
+    artsyXapp.on('error', function() {});
+    artsyXapp.init({
+      url: 'http://localhost:7000',
+      id: 'foo',
+      secret: 'bar',
+      retryDelay: 100
+    }, function(err) {
+      calls++;
+      if (calls === 4) {
+        (err === null).should.be.true;
+        requested.should.equal(4);
+        (requestTimes[3] - requestTimes[2]).should.be.within(95, 160);
+        done();
+      }
     });
   });
 });
